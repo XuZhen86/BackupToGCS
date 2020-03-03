@@ -232,7 +232,7 @@ class Action:
     def purgeRemote(self, remove: bool) -> int:
         localBlobNames = set(self.database.selectBlobs(''))
         remoteBlobNames = set(self.cloudStorage.getBlobNames())
-        setDifference = localBlobNames.difference(remoteBlobNames)
+        setDifference = remoteBlobNames.difference(localBlobNames)
 
         if remove:
             for name in setDifference:

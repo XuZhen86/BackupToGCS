@@ -179,36 +179,31 @@ class CommandLine:
             return
 
         if args.command == 'backup':
-            action = Action(args.file, int(
-                args.nProcesses), int(args.queueSize))
+            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
             action.setPath(args.path)
             action.close()
             return
 
         if args.command == 'restore':
-            action = Action(args.file, int(
-                args.nProcesses), int(args.queueSize))
+            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
             action.getPath(args.path)
             action.close()
             return
 
         if args.command == 'remove':
-            action = Action(args.file, int(
-                args.nProcesses), int(args.queueSize))
+            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
             action.removePath(args.path)
             action.close()
             return
 
         if args.command == 'ls':
-            action = Action(args.file, int(
-                args.nProcesses), int(args.queueSize))
+            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
             action.listFiles(args.path, args.machineReadable)
             action.close()
             return
 
         if args.command == 'purgeRemote':
-            action = Action(args.file, int(
-                args.nProcesses), int(args.queueSize))
+            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
             nBlobs = action.purgeRemote(args.remove)
             action.close()
 
