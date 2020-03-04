@@ -155,8 +155,12 @@ class Action:
                 filePath = os.path.join(dirPath, fileName)
                 self.setFile(filePath)
 
-    def getPath(self, relPath: str) -> None:
+    def getPath(self, relPath: str, swapPrefix: list = ['/', '/']) -> None:
         absPath = os.path.abspath(relPath)
+        swapPrefix[0] = os.path.abspath(swapPrefix[0])
+        swapPrefix[1] = os.path.abspath(swapPrefix[1])
+        if absPath.startswith(swapPrefix[0]):
+            absPath = swapPrefix[1] + absPath[len(swapPrefix[0]):]
 
         if os.path.isfile(absPath):
             self.getFile(absPath)

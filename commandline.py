@@ -86,6 +86,14 @@ class CommandLine:
                 Path containing files to be restored.
             '''
         )
+        restoreParser.add_argument(
+            '--swapPrefix', action='store', nargs=2,
+            help='''
+                Replace the prefix of file paths with the new one.
+                Usually used when restoring to a path other than the one used for backup.
+                Example: --swapPrefix /home/user1/oldPath /home/user2/newPath
+            '''
+        )
 
         removeParser = subparsers.add_parser(
             'remove',
@@ -186,7 +194,7 @@ class CommandLine:
 
         if args.command == 'restore':
             action = Action(args.file, int(args.nProcesses), int(args.queueSize))
-            action.getPath(args.path)
+            action.getPath(args.path, args.swapPrefix)
             action.close()
             return
 
