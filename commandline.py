@@ -20,11 +20,11 @@ class CommandLine:
         parser = ArgumentParser(
             description='''
                 A python program that automatically slices, encrypts, and backup files to Google Cloud Storage.
-                During backup, files are sliced into chunks of maximun 32MiB.
-                Each chunks encrypted with unique keys using Fernet encryption.
+                During backup, files were sliced into chunks of maximun 32MiB.
+                Each chunk was compressed and encrypted with unique keys using Fernet encryption.
                 Then uploaded to specified Google Cloud Storage bucket.
-                Information of files and slices are stored in a SQLite3 database file.
-                During restore, slices are downloaded, decrypted, then assembled into original file with specified path.
+                Information of files and slices were stored in a SQLite3 database file.
+                During restore, slices were downloaded, decrypted, uncompressed, then assembled into original file with specified path.
             ''',
             epilog='''
                 Visit https://github.com/XuZhen86/BackupToGCS to view this project on GitHub.

@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import random
+import zlib
 from datetime import datetime
 
 import humanize
@@ -25,11 +26,12 @@ class Action:
         self.database.close()
         self.logger.debug('Closed')
 
-    def setBlob(self, data: bytes) -> int:
+    def setBlob(self, data: bytes, compressLevel: int = -1) -> int:
         decryptedSize = len(data)
         decryptedSha256 = hashlib.sha256(data).digest()
 
         encryptionKey = Fernet.generate_key()
+        data = zlib.compress(data, compressLevel)
         data = Fernet(encryptionKey).encrypt(data)
 
         encryptedSize = len(data)
@@ -55,6 +57,7 @@ class Action:
         assert blobInfo.encryptedSha256 == hashlib.sha256(data).digest()
 
         data = Fernet(blobInfo.encryptionKey).decrypt(data)
+        data = zlib.decompress(data)
         assert blobInfo.decryptedSize == len(data)
         assert blobInfo.decryptedSha256 == hashlib.sha256(data).digest()
 
