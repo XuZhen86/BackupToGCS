@@ -18,8 +18,10 @@ class Action:
         self.database = Database(dbFileName)
         self.cloudStorage = CloudStorage(self.database)
 
-    def close(self) -> None:
+    def close(self, commitDatabase: bool = True) -> None:
         self.cloudStorage.close()
+        if commitDatabase:
+            self.database.commit()
         self.database.close()
         self.logger.debug('Closed')
 
@@ -37,8 +39,12 @@ class Action:
         self.cloudStorage.setBlob(name, data)
         blobId = self.database.setBlob(BlobInfo(name, encryptionKey, encryptedSize, encryptedSha256, decryptedSize, decryptedSha256))
 
-        self.logger.info('+ {}'.format(name))
-        self.logger.debug('Set blob={} id={} dSize={} eSize={}'.format(name, blobId, decryptedSize, encryptedSize))
+        self.logger.info('+ {} {:8} {:10} {:10}'.format(
+            name,
+            blobId,
+            humanize.naturalsize(decryptedSize),
+            humanize.naturalsize(encryptedSize)
+        ))
         return blobId
 
     def getBlob(self, blobId: int) -> bytes:
@@ -52,8 +58,12 @@ class Action:
         assert blobInfo.decryptedSize == len(data)
         assert blobInfo.decryptedSha256 == hashlib.sha256(data).digest()
 
-        self.logger.info('= {}'.format(blobInfo.name))
-        self.logger.debug('Get blob={} id={} dSize={} eSize={}'.format(blobInfo.name, blobId, blobInfo.decryptedSize, blobInfo.encryptedSize))
+        self.logger.info('= {} {:8} {:10} {:10}'.format(
+            blobInfo.name,
+            blobId,
+            humanize.naturalsize(blobInfo.decryptedSize, binary=True),
+            humanize.naturalsize(blobInfo.encryptedSize, binary=True)
+        ))
         return data
 
     def removeBlob(self, blobId: int) -> bool:
@@ -64,8 +74,12 @@ class Action:
         self.cloudStorage.removeBlob(blobInfo.name)
         self.database.removeBlob(blobId)
 
-        self.logger.info('- {}'.format(blobInfo.name))
-        self.logger.debug('Remove blob={} id={} dSize={} eSize={}'.format(blobInfo.name, blobId, blobInfo.decryptedSize, blobInfo.encryptedSize))
+        self.logger.info('- {} {:8} {:10} {:10}'.format(
+            blobInfo.name,
+            blobId,
+            humanize.naturalsize(blobInfo.decryptedSize, binary=True),
+            humanize.naturalsize(blobInfo.encryptedSize, binary=True)
+        ))
         return True
 
     def setFile(self, path: str) -> int:
@@ -96,12 +110,18 @@ class Action:
 
         fileId = self.database.setFile(FileInfo(path, sha256.digest(), stats, encryptedSize, decryptedSize, blobIds))
 
-        self.logger.info('+ {}'.format(path))
-        self.logger.debug('Set file={} dSize={} eSize={} nBlobs={}'.format(path, decryptedSize, encryptedSize, len(blobIds)))
+        self.logger.info('+ {} {} {} {}'.format(
+            path,
+            humanize.naturalsize(decryptedSize, binary=True),
+            humanize.naturalsize(encryptedSize, binary=True),
+            len(blobIds)
+        ))
         return fileId
 
-    def getFile(self, path: str) -> bool:
+    def getFile(self, path: str, altPath: str = None) -> bool:
         fileInfo = self.database.getFile(path)
+        path = altPath if altPath is not None else path
+
         if fileInfo is None:
             return False
 
@@ -126,21 +146,30 @@ class Action:
         os.chown(path, stats['uid'], stats['gid'])
         os.utime(path, (stats['atime'], stats['mtime']))
 
-        self.logger.info('= {}'.format(path))
-        self.logger.debug('Get file={} dSize={} eSize={} nBlobs={}'.format(path, fileInfo.decryptedSize, fileInfo.encryptedSize, len(fileInfo.blobIds)))
+        self.logger.info('= {} {} {} {}'.format(
+            path,
+            humanize.naturalsize(fileInfo.decryptedSize, binary=True),
+            humanize.naturalsize(fileInfo.encryptedSize, binary=True),
+            len(fileInfo.blobIds)
+        ))
         return True
 
-    def removeFile(self, path: str) -> bool:
+    def removeFile(self, path: str, forceRemove: bool = False) -> bool:
         fileInfo = self.database.getFile(path)
         if fileInfo is None:
             return False
 
-        for blobId in fileInfo.blobIds:
-            assert self.removeBlob(blobId)
-        assert self.database.removeFile(path)
+        if forceRemove or input('Remove {}? '.format(path)).lower() == 'yes':
+            for blobId in fileInfo.blobIds:
+                assert self.removeBlob(blobId)
+            assert self.database.removeFile(path)
 
-        self.logger.info('- {}'.format(path))
-        self.logger.debug('Remove file={} dSize={} eSize={} nBlobs={}'.format(path, fileInfo.decryptedSize, fileInfo.encryptedSize, len(fileInfo.blobIds)))
+            self.logger.info('- {} {} {} {}'.format(
+                path,
+                humanize.naturalsize(fileInfo.decryptedSize, binary=True),
+                humanize.naturalsize(fileInfo.encryptedSize, binary=True),
+                len(fileInfo.blobIds)
+            ))
         return True
 
     def setPath(self, relPath: str) -> None:
@@ -159,21 +188,19 @@ class Action:
         absPath = os.path.abspath(relPath)
         swapPrefix[0] = os.path.abspath(swapPrefix[0])
         swapPrefix[1] = os.path.abspath(swapPrefix[1])
-        if absPath.startswith(swapPrefix[0]):
-            absPath = swapPrefix[1] + absPath[len(swapPrefix[0]):]
-
-        if os.path.isfile(absPath):
-            self.getFile(absPath)
-            return
 
         for path in self.database.selectPaths(absPath):
-            assert self.getFile(path)
+            altPath = None
+            if path.startswith(swapPrefix[0]):
+                altPath = swapPrefix[1] + path[len(swapPrefix[0]):]
 
-    def removePath(self, relPath: str) -> None:
+            assert self.getFile(path, altPath)
+
+    def removePath(self, relPath: str, forceRemove: bool = False) -> None:
         absPath = os.path.abspath(relPath)
 
         for path in self.database.selectPaths(absPath):
-            assert self.removeFile(path)
+            assert self.removeFile(path, forceRemove)
 
     def isFileChanged(self, path) -> bool:
         fileInfo = self.database.getFile(path)
@@ -204,8 +231,18 @@ class Action:
                 'Perm', 'n', 'Uid', 'Gid', 'DecSize', 'EncSize', 'ModTime', 'Path'
             ))
 
+        nBlobs = 0
+        decryptedSize = 0
+        encryptedSize = 0
+        nPaths = 0
+
         for path in self.database.selectPaths(absPath):
             fileInfo = self.database.getFile(path)
+
+            nBlobs += len(fileInfo.blobIds)
+            decryptedSize += fileInfo.decryptedSize
+            encryptedSize += fileInfo.encryptedSize
+            nPaths += 1
 
             output = None
             if machineReadable:
@@ -233,6 +270,15 @@ class Action:
                 )
             print(output)
 
+        if not machineReadable:
+            print('Files: {}. Blobs: {}. Decrypted Size: {}. Encrypted Size: {}. Inflation: {:.2f}%.'.format(
+                nPaths,
+                nBlobs,
+                humanize.naturalsize(decryptedSize, binary=True),
+                humanize.naturalsize(encryptedSize, binary=True),
+                (encryptedSize - decryptedSize) / decryptedSize * 100 if decryptedSize != 0 else 0
+            ))
+
     def purgeRemote(self, remove: bool) -> int:
         localBlobNames = set(self.database.selectBlobs(''))
         remoteBlobNames = set(self.cloudStorage.getBlobNames())
@@ -242,8 +288,15 @@ class Action:
             for name in setDifference:
                 self.cloudStorage.removeBlob(name)
 
-        return len(setDifference)
+        nBlobs = len(setDifference)
+        if remove:
+            print('Removed {} remote objects.'.format(nBlobs))
+        else:
+            print('Found {} unused remote objects.'.format(nBlobs))
+
+        return nBlobs
 
 
 if __name__ == '__main__':
-    pass
+    print('The entry point of this program is in commandline.py')
+    print('Use command \'python3 commandline.py -h\'')

@@ -1,6 +1,6 @@
 import json
 import os
-from multiprocessing import JoinableQueue, Process, Queue
+from multiprocessing import JoinableQueue, Process, Queue, current_process
 from tempfile import NamedTemporaryFile
 from typing import List, Optional
 
@@ -25,7 +25,7 @@ class CloudStorage:
         for processId in range(nProcesses):
             process = Process(
                 target=CloudStorage.uploadWorker,
-                name='UploadProcess{}'.format(processId),
+                name='UploadWorker({})'.format(processId),
                 args=(self.credentialsFile.name, bucketName, self.uploadQueue)
             )
             process.start()
@@ -41,18 +41,21 @@ class CloudStorage:
 
     @staticmethod
     def uploadWorker(credentialsFileName: str, bucketName: str, queue: JoinableQueue) -> None:
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentialsFileName
-        bucket = storage.Client().get_bucket(bucketName)
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = ''
+        try:
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentialsFileName
+            bucket = storage.Client().get_bucket(bucketName)
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = ''
 
-        while True:
-            task = queue.get()
-            if task is None:
-                return
+            while True:
+                task = queue.get()
+                if task is None:
+                    return
 
-            name, data = task
-            bucket.blob(name).upload_from_string(data)
-            queue.task_done()
+                name, data = task
+                bucket.blob(name).upload_from_string(data)
+                queue.task_done()
+        except KeyboardInterrupt:
+            print('{} received KeyboardInterrupt, exit now.'.format(current_process().name))
 
     @staticmethod
     def setCredentials(db: Database, credentialsPath: str) -> None:
@@ -105,4 +108,5 @@ class CloudStorage:
 
 
 if __name__ == '__main__':
-    pass
+    print('The entry point of this program is in commandline.py')
+    print('Use command \'python3 commandline.py -h\'')

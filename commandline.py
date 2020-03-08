@@ -1,6 +1,7 @@
-from argparse import ArgumentParser
-import sys
 import logging
+import sys
+from argparse import ArgumentParser
+
 from action import Action
 from cloudstorage import CloudStorage
 from database import Database
@@ -16,14 +17,26 @@ class CommandLine:
         return
 
     def parseArgs(self):
-        parser = ArgumentParser()
+        parser = ArgumentParser(
+            description='''
+                A python program that automatically slices, encrypts, and backup files to Google Cloud Storage.
+                During backup, files are sliced into chunks of maximun 32MiB.
+                Each chunks encrypted with unique keys using Fernet encryption.
+                Then uploaded to specified Google Cloud Storage bucket.
+                Information of files and slices are stored in a SQLite3 database file.
+                During restore, slices are downloaded, decrypted, then assembled into original file with specified path.
+            ''',
+            epilog='''
+                Visit https://github.com/XuZhen86/BackupToGCS to view this project on GitHub.
+            '''
+        )
 
         parser.add_argument(
-            '-f', '--file', action='store', default='database.db',
+            '-f', '--file', action='store', default='./database.db',
             help='''
                 SQLite3 database file containing all necessary data.
                 ATTENTION: Database file is not encrypted and contains sensitive data.
-                (default: database.db)
+                (default: ./database.db)
             '''
         )
         parser.add_argument(
@@ -102,25 +115,32 @@ class CommandLine:
             '''
         )
         removeParser.add_argument(
+            '-f', '--force', action='store_true', default=False,
+            help='''
+                Attempt to remove the files without prompting for confirmation.
+                (default: false)
+            '''
+        )
+        removeParser.add_argument(
             'path', action='store',
             help='''
                 Path containing files to be removed.
             '''
         )
 
-        lsParser = subparsers.add_parser(
-            'ls',
+        listParser = subparsers.add_parser(
+            'list',
             help='''
                 Print info of files under specified path, similar to Unix/Linux `ls` command.
             '''
         )
-        lsParser.add_argument(
+        listParser.add_argument(
             'path', action='store',
             help='''
                 Path containing files to be printed.
             '''
         )
-        lsParser.add_argument(
+        listParser.add_argument(
             '-m', '--machineReadable', action='store_true', default=False,
             help='''
                 Print in a machine-readable format.
@@ -130,7 +150,8 @@ class CommandLine:
         purgeRemoteParser = subparsers.add_parser(
             'purgeRemote',
             help='''
-                List unused objects in remote bucket.
+                List or remove unused objects in remote bucket.
+                Usually used to sanitize remote bucket after interrupting a backup command.
             '''
         )
         purgeRemoteParser.add_argument(
@@ -148,18 +169,18 @@ class CommandLine:
             '''
         )
         setupParser.add_argument(
-            '-f', '--file', action='store', default='database.db',
+            '-f', '--file', action='store', default='./database.db',
             help='''
                 SQLite3 database file name that new config will be written to.
-                (default: database.db)
+                (default: ./database.db)
             '''
         )
         setupParser.add_argument(
-            '-c', '--credentials', action='store', default='credentials.json',
+            '-c', '--credentials', action='store', default='./credentials.json',
             help='''
                 Credentials file supplied by Google.
                 This file is only need for the setup and a copy of it is saved to the database file.
-                (default: credentials.json)
+                (default: ./credentials.json)
                 (https://cloud.google.com/docs/authentication/getting-started)
             '''
         )
@@ -186,47 +207,31 @@ class CommandLine:
             print(args)
             return
 
-        if args.command == 'backup':
-            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
-            action.setPath(args.path)
-            action.close()
-            return
-
-        if args.command == 'restore':
-            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
-            action.getPath(args.path, args.swapPrefix)
-            action.close()
-            return
-
-        if args.command == 'remove':
-            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
-            action.removePath(args.path)
-            action.close()
-            return
-
-        if args.command == 'ls':
-            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
-            action.listFiles(args.path, args.machineReadable)
-            action.close()
-            return
-
-        if args.command == 'purgeRemote':
-            action = Action(args.file, int(args.nProcesses), int(args.queueSize))
-            nBlobs = action.purgeRemote(args.remove)
-            action.close()
-
-            if args.remove:
-                print('Removed {} remote objects.'.format(nBlobs))
-            else:
-                print('Found {} unused remote objects.'.format(nBlobs))
-            return
-
         if args.command == 'setup':
             database = Database(args.file)
             CloudStorage.setCredentials(database, args.credentials)
             CloudStorage.setBucketName(database, args.bucket)
             database.close()
             return
+
+        action = Action(args.file, int(args.nProcesses), int(args.queueSize))
+        try:
+            if args.command == 'backup':
+                action.setPath(args.path)
+            elif args.command == 'restore':
+                action.getPath(args.path, args.swapPrefix)
+            elif args.command == 'remove':
+                action.removePath(args.path, args.force)
+            elif args.command == 'list':
+                action.listFiles(args.path, args.machineReadable)
+            elif args.command == 'purgeRemote':
+                action.purgeRemote(args.remove)
+            else:
+                print('Unknown command: {}'.format(args.command))
+            action.close(commitDatabase=True)
+        except KeyboardInterrupt:
+            print('\nReceived KeyboardInterrupt, changes to database are not committed.')
+            action.close(commitDatabase=False)
 
 
 if __name__ == '__main__':

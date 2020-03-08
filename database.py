@@ -14,14 +14,44 @@ class FileInfo:
         self.blobIds = blobIds
 
     def __str__(self):
-        return str([self.path, self.sha256, self.stats, self.encryptedSize, self.decryptedSize, self.blobIds])
+        return str([
+            self.path,
+            self.sha256,
+            self.stats,
+            self.encryptedSize,
+            self.decryptedSize,
+            self.blobIds
+        ])
 
     def toSqlList(self):
-        return [self.path, self.sha256, json.dumps(self.stats), self.encryptedSize, self.decryptedSize, json.dumps(self.blobIds)]
+        return [
+            self.path,
+            self.sha256,
+            self.stats['mode'],
+            self.stats['uid'],
+            self.stats['gid'],
+            self.stats['atime'],
+            self.stats['mtime'],
+            self.encryptedSize,
+            self.decryptedSize,
+            json.dumps(self.blobIds)
+        ]
 
     @classmethod
     def fromSqlList(cls, sqlList: List) -> object:
-        return FileInfo(sqlList[0], sqlList[1], json.loads(sqlList[2]), sqlList[3], sqlList[4], json.loads(sqlList[5]))
+        return FileInfo(
+            sqlList[0],
+            sqlList[1], {
+                'mode': sqlList[2],
+                'uid': sqlList[3],
+                'gid': sqlList[4],
+                'atime': sqlList[5],
+                'mtime': sqlList[6]
+            },
+            sqlList[7],
+            sqlList[8],
+            json.loads(sqlList[9])
+        )
 
 
 class BlobInfo:
@@ -34,14 +64,35 @@ class BlobInfo:
         self.decryptedSha256 = decryptedSha256
 
     def __str__(self):
-        return str([self.name, self.encryptionKey, self.encryptedSize, self.encryptedSha256, self.decryptedSize, self.decryptedSha256])
+        return str([
+            self.name,
+            self.encryptionKey,
+            self.encryptedSize,
+            self.encryptedSha256,
+            self.decryptedSize,
+            self.decryptedSha256
+        ])
 
     def toSqlList(self):
-        return [self.name, self.encryptionKey, self.encryptedSize, self.encryptedSha256, self.decryptedSize, self.decryptedSha256]
+        return [
+            self.name,
+            self.encryptionKey,
+            self.encryptedSize,
+            self.encryptedSha256,
+            self.decryptedSize,
+            self.decryptedSha256
+        ]
 
     @classmethod
     def fromSqlList(cls, sqlList: List) -> object:
-        return BlobInfo(sqlList[0], sqlList[1], sqlList[2], sqlList[3], sqlList[4], sqlList[5])
+        return BlobInfo(
+            sqlList[0],
+            sqlList[1],
+            sqlList[2],
+            sqlList[3],
+            sqlList[4],
+            sqlList[5]
+        )
 
 
 class Database:
@@ -53,7 +104,11 @@ class Database:
                     id              integer not null    primary key     autoincrement,
                     path            text    not null    unique,
                     sha256          blob    not null,
-                    stats           text    not null,
+                    mode            integer not null,
+                    uid             integer not null,
+                    gid             integer not null,
+                    atime           real    not null,
+                    mtime           real    not null,
                     encryptedSize   integer not null,
                     decryptedSize   integer not null,
                     blobIds         text    not null    unique
@@ -84,17 +139,17 @@ class Database:
                 where   path = ?
             ''',
             'insertFile': '''
-                insert into Files   (path, sha256, stats, encryptedSize, decryptedSize, blobIds)
-                values              (?, ?, ?, ?, ?, ?)
+                insert into Files   (path, sha256, mode, uid, gid, atime, mtime, encryptedSize, decryptedSize, blobIds)
+                values              (?,    ?,      ?,    ?,   ?,   ?,     ?,     ?,             ?,             ?)
             ''',
             'selectFile': '''
-                select  path, sha256, stats, encryptedSize, decryptedSize, blobIds
+                select  path, sha256, mode, uid, gid, atime, mtime, encryptedSize, decryptedSize, blobIds
                 from    Files
                 where   path = ?
             ''',
             'updateFile': '''
                 update  Files
-                set     path = ?, sha256 = ?, stats = ?, encryptedSize = ?, decryptedSize = ?, blobIds = ?
+                set     path = ?, sha256 = ?, mode = ?, uid = ?, gid = ?, atime = ?, mtime = ?, encryptedSize = ?, decryptedSize = ?, blobIds = ?
                 where   path = ?
             ''',
 
@@ -105,7 +160,7 @@ class Database:
             ''',
             'insertBlob': '''
                 insert into Blobs   (name, encryptionKey, encryptedSize, encryptedSha256, decryptedSize, decryptedSha256)
-                values              (?, ?, ?, ?, ?, ?)
+                values              (?,    ?,             ?,             ?,               ?,             ?)
             ''',
             'selectBlob': '''
                 select  name, encryptionKey, encryptedSize, encryptedSha256, decryptedSize, decryptedSha256
@@ -125,7 +180,7 @@ class Database:
             ''',
             'insertPair': '''
                 insert into Pairs   (key, value)
-                values              (?, ?)
+                values              (?,   ?)
             ''',
             'selectPair': '''
                 select  value
@@ -154,8 +209,10 @@ class Database:
         self.db = sqlite3.connect(dbFileName)
         self.createTables()
 
-    def close(self) -> None:
+    def commit(self) -> None:
         self.db.commit()
+
+    def close(self) -> None:
         self.db.close()
 
     def createTables(self) -> None:
@@ -307,9 +364,6 @@ class Database:
         )
 
 
-def main():
-    return
-
-
 if __name__ == '__main__':
-    main()
+    print('The entry point of this program is in commandline.py')
+    print('Use command \'python3 commandline.py -h\'')
