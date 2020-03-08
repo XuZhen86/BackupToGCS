@@ -42,8 +42,8 @@ class Action:
         self.logger.info('+ {} {:8} {:10} {:10}'.format(
             name,
             blobId,
-            humanize.naturalsize(decryptedSize),
-            humanize.naturalsize(encryptedSize)
+            humanize.naturalsize(decryptedSize, binary=True),
+            humanize.naturalsize(encryptedSize, binary=True)
         ))
         return blobId
 
