@@ -211,6 +211,7 @@ class CommandLine:
             database = Database(args.file)
             CloudStorage.setCredentials(database, args.credentials)
             CloudStorage.setBucketName(database, args.bucket)
+            database.commit()
             database.close()
             return
 
