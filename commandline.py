@@ -229,10 +229,10 @@ class CommandLine:
                 action.purgeRemote(args.remove)
             else:
                 print('Unknown command: {}'.format(args.command))
-            action.close(commitDatabase=True)
+            action.close()
         except KeyboardInterrupt:
             print('\nReceived KeyboardInterrupt, changes to database are not committed.')
-            action.close(commitDatabase=False)
+            action.close(commitDatabase=False, waitForTasks=False)
 
 
 if __name__ == '__main__':

@@ -18,8 +18,8 @@ class Action:
         self.database = Database(dbFileName)
         self.cloudStorage = CloudStorage(self.database)
 
-    def close(self, commitDatabase: bool = True) -> None:
-        self.cloudStorage.close()
+    def close(self, commitDatabase: bool = True, waitForTasks: bool = True) -> None:
+        self.cloudStorage.close(waitForTasks)
         if commitDatabase:
             self.database.commit()
         self.database.close()

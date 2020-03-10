@@ -31,10 +31,11 @@ class CloudStorage:
             process.start()
             self.processes.append(process)
 
-    def close(self) -> None:
-        self.uploadQueue.join()
-        for _ in range(len(self.processes)):
-            self.uploadQueue.put(None)
+    def close(self, waitForTasks: bool = True) -> None:
+        if waitForTasks:
+            self.uploadQueue.join()
+            for _ in range(len(self.processes)):
+                self.uploadQueue.put(None)
         for process in self.processes:
             process.join()
         self.credentialsFile.close()
@@ -55,7 +56,7 @@ class CloudStorage:
                 bucket.blob(name).upload_from_string(data)
                 queue.task_done()
         except KeyboardInterrupt:
-            print('{} received KeyboardInterrupt, exit now.'.format(current_process().name))
+            print('{} received KeyboardInterrupt, exit without finishing remainding tasks.'.format(current_process().name))
 
     @staticmethod
     def setCredentials(db: Database, credentialsPath: str) -> None:
