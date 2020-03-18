@@ -1,8 +1,10 @@
 import logging
 import sys
 from argparse import ArgumentParser
+from multiprocessing import cpu_count
 
 from action import Action
+from backupcommand import BackupCommand
 from cloudstorage import CloudStorage
 from database import Database
 
@@ -84,6 +86,21 @@ class CommandLine:
             'path', action='store',
             help='''
                 Path containing files to be backed-up.
+            '''
+        )
+        backupParser.add_argument(
+            '--nEncryptionWorkers', action='store', default=cpu_count(),
+            help='''
+                Set number of processes used for encryption.
+                (default: {})
+            '''.format(cpu_count())
+        )
+        backupParser.add_argument(
+            '--nUploadWorkers', action='store', default=2,
+            help='''
+                Set number of processes used for uploading.
+                The same number of processes will be created to handle removal of objects.
+                (default: 2)
             '''
         )
 
@@ -218,7 +235,12 @@ class CommandLine:
         action = Action(args.file, int(args.nProcesses), int(args.queueSize))
         try:
             if args.command == 'backup':
-                action.setPath(args.path)
+                database = Database(args.file)
+                backupCommand = BackupCommand(database, args.nEncryptionWorkers, args.nUploadWorkers)
+                backupCommand.backupPath(args.path)
+                database.commit()
+                database.close()
+
             elif args.command == 'restore':
                 action.getPath(args.path, args.swapPrefix)
             elif args.command == 'remove':
