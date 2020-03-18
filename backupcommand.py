@@ -1,33 +1,51 @@
 import hashlib
+import logging
 import os
 import random
-from multiprocessing import Pool, Process, Queue
+from functools import partial
+from multiprocessing import Pool, Process, Queue, current_process
 from tempfile import NamedTemporaryFile
 
+import setproctitle
 from cryptography.fernet import Fernet
 from google.cloud import storage
+from humanize import naturalsize
+from ttictoc import TicToc
 
 from database import BlobInfo, Database, FileInfo
 
+naturalsize = partial(naturalsize, binary=True)
 
 class BackupCommand:
-    def __init__(self, database: Database, nEncryptionWorkers: int, nUploadWorkers: int):
+    def __init__(self, database: Database, nEncryptionWorkers: int, nUploadWorkers: int, nUploadPending: int):
+        setproctitle.setproctitle('BackupCommand')
+
+        self.logger = logging.getLogger(__name__)
         self.database = database
         self.nEncryptionWorkers = nEncryptionWorkers
         self.nUploadWorkers = nUploadWorkers
+        self.nUploadPending = nUploadPending
 
     def backupPath(self, path: str) -> None:
+        ticToc = TicToc()
+        ticToc.tic()
+
         # Read credentials and bucket name from database
         bucketName = self.database.getPair('bucketName')
         credentials = self.database.getPair('credentials').encode()
 
         # Start encryption workers using Pool
-        encryptionWorkerPool = Pool(processes=self.nEncryptionWorkers)
-        for processId, process in enumerate(encryptionWorkerPool._pool):
-            process.name = 'EncryptionWorker[{}]'.format(processId)
+        encryptionWorkerInitializerArgs = Queue(self.nEncryptionWorkers)
+        for workerId in range(self.nEncryptionWorkers):
+            encryptionWorkerInitializerArgs.put(workerId)
+        encryptionWorkerPool = Pool(
+            processes=self.nEncryptionWorkers,
+            initializer=BackupCommand.encryptionWorkerInitializer,
+            initargs=[encryptionWorkerInitializerArgs]
+        )
 
         # Start upload workers using Process list
-        uploadTaskQueue = Queue(self.nUploadWorkers * 2)
+        uploadTaskQueue = Queue(self.nUploadPending)
         uploadWorkers = []
         for processId in range(self.nUploadWorkers):
             worker = Process(
@@ -53,6 +71,9 @@ class BackupCommand:
         # Convert to absolute path
         path = os.path.abspath(path)
 
+        decryptedSize = 0
+        encryptedSize = 0
+
         # Walk over all files under path
         # If path is a file, this step does nothing
         for dirPath, _, fileNames in os.walk(path):
@@ -75,7 +96,9 @@ class BackupCommand:
                             removeTaskQueue.put(blobName)
 
                     # Backup the file
-                    self.backupFile(filePath, encryptionWorkerPool, uploadTaskQueue)
+                    result = self.backupFile(filePath, encryptionWorkerPool, uploadTaskQueue)
+                    decryptedSize += result[0]
+                    encryptedSize += result[1]
 
         # Remember to process it if path itself is a file
         if os.path.isfile(path):
@@ -97,7 +120,17 @@ class BackupCommand:
         for worker in removeWorkers:
             worker.join()
 
-    def backupFile(self, path: str, encryptionWorkerPool: Pool, uploadTaskQueue: Queue):
+        elapsed = ticToc.toc()
+        self.logger.info('elapsed: {:.3f}s, speed: {}/s {}/s'.format(
+            elapsed,
+            naturalsize(decryptedSize/elapsed),
+            naturalsize(encryptedSize/elapsed)
+        ))
+
+    def backupFile(self, path: str, encryptionWorkerPool: Pool, uploadTaskQueue: Queue) -> list:
+        ticToc = TicToc()
+        ticToc.tic()
+
         # Initialize variables
         sha256 = hashlib.sha256()
         blobIds = []
@@ -141,12 +174,21 @@ class BackupCommand:
                 name: str = result[0]
                 encryptedChunk: bytes = result[1]
                 blobInfo: BlobInfo = result[2]
+                elapsed: float = result[3]
 
                 encryptedSize += blobInfo.encryptedSize
                 decryptedSize += blobInfo.decryptedSize
 
                 # Send encrypted chunks to upload queue
                 uploadTaskQueue.put([name, encryptedChunk])
+                self.logger.info('+ {}, before: {}, after: {}, elapsed: {:.3f}s, speed: {}/s {}/s'.format(
+                    name,
+                    naturalsize(blobInfo.decryptedSize),
+                    naturalsize(blobInfo.encryptedSize),
+                    elapsed,
+                    naturalsize(blobInfo.decryptedSize/elapsed),
+                    naturalsize(blobInfo.encryptedSize/elapsed)
+                ))
 
                 # Record blob in database and take note of blob ID
                 blobIds.append(self.database.setBlob(blobInfo))
@@ -163,6 +205,19 @@ class BackupCommand:
 
         # Record file in database
         self.database.setFile(FileInfo(path, sha256.digest(), stats, encryptedSize, decryptedSize, blobIds))
+
+        elapsed = ticToc.toc()
+        self.logger.info('+ {}, before: {}, after: {}, blobs: {}, elapsed: {:.3f}s, speed: {}/s {}/s'.format(
+            path,
+            naturalsize(decryptedSize),
+            naturalsize(encryptedSize),
+            len(blobIds),
+            elapsed,
+            naturalsize(decryptedSize/elapsed),
+            naturalsize(encryptedSize/elapsed)
+        ))
+        self.database.commit()
+        return [decryptedSize, encryptedSize]
 
     def isFileChanged(self, path) -> bool:
         # File is "changed" is there is not in database
@@ -193,7 +248,16 @@ class BackupCommand:
         return False
 
     @staticmethod
+    def encryptionWorkerInitializer(argsQueue: Queue) -> None:
+        workerId = argsQueue.get()
+        current_process().name = 'EncryptionWorker[{}]'.format(workerId)
+        setproctitle.setproctitle('EncryptionWorker[{}]'.format(workerId))
+
+    @staticmethod
     def encryptionWorker(chunk: bytes) -> list:
+        ticToc = TicToc()
+        ticToc.tic()
+
         name = ''.join(random.choice('0123456789abcdef') for i in range(32))
 
         decryptedSize = len(chunk)
@@ -206,10 +270,12 @@ class BackupCommand:
         encryptedSha256 = hashlib.sha256(chunk).digest()
 
         blobInfo = BlobInfo(name, encryptionKey, encryptedSize,encryptedSha256, decryptedSize, decryptedSha256)
-        return [name, chunk, blobInfo]
+        return [name, chunk, blobInfo, ticToc.toc()]
 
     @staticmethod
     def uploadWorker(credentials: bytes, bucketName: str, taskQueue: Queue):
+        setproctitle.setproctitle(current_process().name)
+
         # Create temporary JSON file, get client, and get bucket
         credentialsFile = NamedTemporaryFile(mode='wb', buffering=0, suffix='.json')
         credentialsFile.write(credentials)
@@ -231,6 +297,8 @@ class BackupCommand:
 
     @staticmethod
     def removeWorker(credentials: bytes, bucketName: str, taskQueue: Queue):
+        setproctitle.setproctitle(current_process().name)
+
         # Create temporary JSON file, get client, and get bucket
         credentialsFile = NamedTemporaryFile(mode='wb', buffering=0, suffix='.json')
         credentialsFile.write(credentials)

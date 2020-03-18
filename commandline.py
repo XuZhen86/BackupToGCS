@@ -96,12 +96,20 @@ class CommandLine:
             '''.format(cpu_count())
         )
         backupParser.add_argument(
-            '--nUploadWorkers', action='store', default=2,
+            '--nUploadWorkers', action='store', default=cpu_count(),
             help='''
                 Set number of processes used for uploading.
                 The same number of processes will be created to handle removal of objects.
-                (default: 2)
-            '''
+                (default: {})
+            '''.format(cpu_count())
+        )
+        backupParser.add_argument(
+            '--nUploadPending', action='store', default=cpu_count()*2,
+            help='''
+                Set maximun number of pending uploads.
+                Pay attention to memory usage when setting this argument.
+                (default: {})
+            '''.format(cpu_count()*2)
         )
 
         restoreParser = subparsers.add_parser(
@@ -236,7 +244,7 @@ class CommandLine:
         try:
             if args.command == 'backup':
                 database = Database(args.file)
-                backupCommand = BackupCommand(database, args.nEncryptionWorkers, args.nUploadWorkers)
+                backupCommand = BackupCommand(database, args.nEncryptionWorkers, args.nUploadWorkers, args.nUploadPending)
                 backupCommand.backupPath(args.path)
                 database.commit()
                 database.close()
