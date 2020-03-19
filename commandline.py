@@ -83,20 +83,20 @@ class CommandLine:
             '''
         )
         backupParser.add_argument(
-            'path', action='store',
+            'path', type=str,
             help='''
                 Path containing files to be backed-up.
             '''
         )
         backupParser.add_argument(
-            '--nEncryptionWorkers', action='store', default=cpu_count(),
+            '--nEncryptionWorkers', default=cpu_count(), type=int,
             help='''
                 Set number of processes used for encryption.
                 (default: {})
             '''.format(cpu_count())
         )
         backupParser.add_argument(
-            '--nUploadWorkers', action='store', default=cpu_count(),
+            '--nUploadWorkers', default=cpu_count(), type=int,
             help='''
                 Set number of processes used for uploading.
                 The same number of processes will be created to handle removal of objects.
@@ -104,7 +104,7 @@ class CommandLine:
             '''.format(cpu_count())
         )
         backupParser.add_argument(
-            '--nUploadPending', action='store', default=cpu_count()*2,
+            '--nUploadPending', default=cpu_count()*2, type=int,
             help='''
                 Set maximun number of pending uploads.
                 Pay attention to memory usage when setting this argument.
