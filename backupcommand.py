@@ -102,7 +102,9 @@ class BackupCommand:
 
         # Remember to process it if path itself is a file
         if os.path.isfile(path):
-            self.backupFile(path, encryptionWorkerPool, uploadTaskQueue)
+            result = self.backupFile(path, encryptionWorkerPool, uploadTaskQueue)
+            decryptedSize += result[0]
+            encryptedSize += result[1]
 
         # Close encryption workers
         encryptionWorkerPool.close()
