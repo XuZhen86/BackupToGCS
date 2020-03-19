@@ -139,6 +139,38 @@ class BackupCommand:
 
         # Read the whole file
         fp = open(path, 'rb')
+
+        # Special processing for empty file to ensure at least 1 blob
+        if os.stat(path).st_size == 0:
+            # Close the file so the while loop does not read it
+            fp.close()
+
+            # Perform a simplified operation similar to non-empty file
+            result = encryptionWorkerPool.apply(
+                func=BackupCommand.encryptionWorker,
+                args=[bytes(0)]
+            )
+
+            name: str = result[0]
+            encryptedChunk: bytes = result[1]
+            blobInfo: BlobInfo = result[2]
+            elapsed: float = result[3]
+
+            encryptedSize += blobInfo.encryptedSize
+
+            uploadTaskQueue.put([name, encryptedChunk])
+            self.logger.info('+ {}, before: {}, after: {}, elapsed: {:.3f}s, speed: {}/s {}/s'.format(
+                name,
+                naturalsize(blobInfo.decryptedSize),
+                naturalsize(blobInfo.encryptedSize),
+                elapsed,
+                naturalsize(blobInfo.decryptedSize/elapsed),
+                naturalsize(blobInfo.encryptedSize/elapsed)
+            ))
+
+            blobIds.append(self.database.setBlob(blobInfo))
+
+        # Read the whole file
         while not fp.closed:
             chunks = []
 
@@ -153,7 +185,7 @@ class BackupCommand:
 
                 chunks.append(chunk)
 
-            # Fire encryption tasks
+            # File encryption tasks
             # It may take a while for workers to finish
             asyncResult = encryptionWorkerPool.map_async(
                 func=BackupCommand.encryptionWorker,
@@ -216,7 +248,7 @@ class BackupCommand:
             naturalsize(decryptedSize/elapsed),
             naturalsize(encryptedSize/elapsed)
         ))
-        self.database.commit()
+
         return [decryptedSize, encryptedSize]
 
     def isFileChanged(self, path) -> bool:
