@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+from sqlite3 import Connection
 from typing import List, Optional
 
 
@@ -96,7 +97,7 @@ class BlobInfo:
 
 
 class Database:
-    def __init__(self, dbFileName: str):
+    def __init__(self, dbFileName: str, connection: Connection = None):
         self.sqls = {
             # Create table
             'createFilesTable': '''
@@ -204,9 +205,15 @@ class Database:
             '''
         }
 
-        # Create connection to file
-        # A new file is created if file does not exist
-        self.db = sqlite3.connect(dbFileName)
+        # If a database connection is given, use the connection
+        if connection is not None:
+            self.db = connection
+        # Otherwise create connection to file
+        else:
+            # A new file is created if file does not exist
+            self.db = sqlite3.connect(dbFileName)
+
+        # Create tables
         self.createTables()
 
     def commit(self) -> None:
@@ -363,6 +370,22 @@ class Database:
             )
         )
 
+    @staticmethod
+    def getTransientCopy(dbFileName: str):
+        # Open file database in readonly mode
+        # https://docs.python.org/3/library/sqlite3.html#sqlite3.connect
+        fileDb = sqlite3.connect('file:{}?mode=ro'.format(dbFileName), uri=True)
+        # Open in-memory database
+        memoryDb = sqlite3.connect(':memory:')
+
+        # Copy content over to memory
+        fileDb.backup(memoryDb)
+
+        # Close file database
+        fileDb.close()
+
+        # Create Database object and return
+        return Database(None, connection=memoryDb)
 
 if __name__ == '__main__':
     print('The entry point of this program is in commandline.py')

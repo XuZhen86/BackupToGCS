@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 from multiprocessing import cpu_count
 
 from action import Action
-from backupcommand import BackupCommand
+from backupcommand import backupCommand
 from cloudstorage import CloudStorage
 from database import Database
 
@@ -89,28 +89,35 @@ class CommandLine:
             '''
         )
         backupParser.add_argument(
-            '--nEncryptionWorkers', default=cpu_count(), type=int,
+            '--nEncryptionWorkers', default=3, type=int,
             help='''
                 Set number of processes used for encryption.
-                (default: {})
-            '''.format(cpu_count())
+                (default: 3)
+            '''
         )
         backupParser.add_argument(
-            '--nUploadWorkers', default=cpu_count(), type=int,
+            '--nUploadThreads', default=2, type=int,
             help='''
-                Set number of processes used for uploading.
-                The same number of processes will be created to handle removal of objects.
-                (default: {})
-            '''.format(cpu_count())
+                Set number of threads used for uploading for each encryption worker.
+                (default: 2)
+            '''
         )
         backupParser.add_argument(
-            '--nUploadPending', default=cpu_count()*2, type=int,
+            '--uploadQueueMiB', default=256, type=int,
             help='''
-                Set maximun number of pending uploads.
+                Set maximun amount of data in MiB waiting to be uploaded for each encryption worker.
                 Pay attention to memory usage when setting this argument.
-                (default: {})
-            '''.format(cpu_count()*2)
+                (default: 256)
+            '''
         )
+        backupParser.add_argument(
+            '--nFileHashingWorkers', default=1, type=int,
+            help='''
+                Set number of processes used for hasing the file.
+                (default: 1)
+            '''
+        )
+
 
         restoreParser = subparsers.add_parser(
             'restore',
@@ -243,11 +250,15 @@ class CommandLine:
         action = Action(args.file, int(args.nProcesses), int(args.queueSize))
         try:
             if args.command == 'backup':
-                database = Database(args.file)
-                backupCommand = BackupCommand(database, args.nEncryptionWorkers, args.nUploadWorkers, args.nUploadPending)
-                backupCommand.backupPath(args.path)
-                database.commit()
-                database.close()
+                backupCommand(
+                    args.file,
+                    args.path,
+                    args.log,
+                    args.nEncryptionWorkers,
+                    args.nUploadThreads,
+                    args.uploadQueueMiB,
+                    args.nFileHashingWorkers
+                )
 
             elif args.command == 'restore':
                 action.getPath(args.path, args.swapPrefix)
