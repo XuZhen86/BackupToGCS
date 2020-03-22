@@ -7,6 +7,7 @@ from action import Action
 from backupcommand import backupCommand
 from cloudstorage import CloudStorage
 from database import Database
+from restorecommand import restoreCommand
 
 
 class CommandLine:
@@ -126,17 +127,54 @@ class CommandLine:
             '''
         )
         restoreParser.add_argument(
-            'path', action='store',
+            'path', type=str,
             help='''
                 Path containing files to be restored.
             '''
         )
         restoreParser.add_argument(
-            '--swapPrefix', action='store', nargs=2,
+            '--swapPrefix', default=['/', '/'], type=str, nargs=2,
             help='''
                 Replace the prefix of file paths with the new one.
                 Usually used when restoring to a path other than the one used for backup.
                 Example: --swapPrefix /home/user1/oldPath /home/user2/newPath
+            '''
+        )
+        restoreParser.add_argument(
+            '--nDecryptionWorkers', default=3, type=int,
+            help='''
+                Set number of processes used for decryption.
+                (default: 3)
+            '''
+        )
+        restoreParser.add_argument(
+            '--nDownloadThreads', default=2, type=int,
+            help='''
+                Set number of threads used for downloading for each decryption worker.
+                (default: 2)
+            '''
+        )
+        restoreParser.add_argument(
+            '--decryptQueueMiB', default=256, type=int,
+            help='''
+                Set maximun amount of data in MiB waiting to be decrypted for each decryption worker.
+                Pay attention to memory usage when setting this argument.
+                (default: 256)
+            '''
+        )
+        restoreParser.add_argument(
+            '--fileWriteQueueMiB', default=256, type=int,
+            help='''
+                Set maximun amount of data in MiB waiting to be written to disk for each decryption worker.
+                Pay attention to memory usage when setting this argument.
+                (default: 256)
+            '''
+        )
+        restoreParser.add_argument(
+            '--nFileVerificationWorkers', default=1, type=int,
+            help='''
+                Set number of processes used for final file verification.
+                (default: 1)
             '''
         )
 
@@ -261,7 +299,18 @@ class CommandLine:
                 )
 
             elif args.command == 'restore':
-                action.getPath(args.path, args.swapPrefix)
+                restoreCommand(
+                    args.file,
+                    args.path,
+                    args.log,
+                    args.swapPrefix,
+                    args.nDecryptionWorkers,
+                    args.nDownloadThreads,
+                    args.decryptQueueMiB,
+                    args.fileWriteQueueMiB,
+                    args.nFileVerificationWorkers
+                )
+
             elif args.command == 'remove':
                 action.removePath(args.path, args.force)
             elif args.command == 'list':
