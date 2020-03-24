@@ -7,6 +7,7 @@ from action import Action
 from backupcommand import backupCommand
 from cloudstorage import CloudStorage
 from database import Database
+from removecommand import removeCommand
 from restorecommand import restoreCommand
 
 
@@ -119,7 +120,6 @@ class CommandLine:
             '''
         )
 
-
         restoreParser = subparsers.add_parser(
             'restore',
             help='''
@@ -185,16 +185,23 @@ class CommandLine:
             '''
         )
         removeParser.add_argument(
-            '-f', '--force', action='store_true', default=False,
+            'path', type=str,
             help='''
-                Attempt to remove the files without prompting for confirmation.
-                (default: false)
+                Path containing files to be removed.
             '''
         )
         removeParser.add_argument(
-            'path', action='store',
+            '--trialRun', default=False, action='store_true',
             help='''
-                Path containing files to be removed.
+                Do not actually remove anything.
+                (default: False)
+            '''
+        )
+        removeParser.add_argument(
+            '--nBlobRemoveThreads', default=4, type=int,
+            help='''
+                Set number of threads used for removing blobs from cloud bucket.
+                (default: 4)
             '''
         )
 
@@ -312,7 +319,14 @@ class CommandLine:
                 )
 
             elif args.command == 'remove':
-                action.removePath(args.path, args.force)
+                removeCommand(
+                    args.file,
+                    args.path,
+                    args.log,
+                    args.trialRun,
+                    args.nBlobRemoveThreads
+                )
+
             elif args.command == 'list':
                 action.listFiles(args.path, args.machineReadable)
             elif args.command == 'purgeRemote':
