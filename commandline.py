@@ -7,6 +7,7 @@ from action import Action
 from backupcommand import backupCommand
 from cloudstorage import CloudStorage
 from database import Database
+from listcommand import listCommand
 from removecommand import removeCommand
 from restorecommand import restoreCommand
 
@@ -212,15 +213,31 @@ class CommandLine:
             '''
         )
         listParser.add_argument(
-            'path', action='store',
+            'path', type=str,
             help='''
-                Path containing files to be printed.
+                Path containing files to be listed.
             '''
         )
         listParser.add_argument(
-            '-m', '--machineReadable', action='store_true', default=False,
+            '--sortBy', action='store', default='path',
+            choices=['perm', 'blobs', 'uid', 'gid', 'decrypt', 'encrypt', 'modification', 'path'],
+            help='''
+                Sort by a specific column.
+                (default: path)
+            '''
+        )
+        listParser.add_argument(
+            '--reverseSort', default=False, action='store_true',
+            help='''
+                Reverse sort order.
+                (default: False)
+            '''
+        )
+        listParser.add_argument(
+            '--machineReadable', default=False, action='store_true',
             help='''
                 Print in a machine-readable format.
+                (default: False)
             '''
         )
 
@@ -328,7 +345,15 @@ class CommandLine:
                 )
 
             elif args.command == 'list':
-                action.listFiles(args.path, args.machineReadable)
+                listCommand(
+                    args.file,
+                    args.path,
+                    args.log,
+                    args.sortBy,
+                    args.reverseSort,
+                    args.machineReadable
+                )
+
             elif args.command == 'purgeRemote':
                 action.purgeRemote(args.remove)
             else:
