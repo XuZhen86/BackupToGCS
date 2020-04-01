@@ -1,25 +1,18 @@
-import logging
 import sys
 from argparse import ArgumentParser
-from multiprocessing import cpu_count
 
-from action import Action
 from backupcommand import backupCommand
-from cloudstorage import CloudStorage
-from database import Database
 from listcommand import listCommand
+from purgeremotecommand import purgeRemoteCommand
 from removecommand import removeCommand
 from restorecommand import restoreCommand
+from setupcommand import setupCommand
 
 
 class CommandLine:
     def __init__(self):
         args = self.parseArgs()
-        self.setLogLevel(args.log)
         self.dispatchCommand(args)
-
-    def close(self) -> None:
-        return
 
     def parseArgs(self):
         parser = ArgumentParser(
@@ -37,31 +30,18 @@ class CommandLine:
         )
 
         parser.add_argument(
-            '-f', '--file', action='store', default='./database.db',
+            '--file', default='database.db',
             help='''
                 SQLite3 database file containing all necessary data.
                 ATTENTION: Database file is not encrypted and contains sensitive data.
-                (default: ./database.db)
+                (default: database.db)
             '''
         )
         parser.add_argument(
-            '--log', action='store', default='',
+            '--log', default='',
+            choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
             help='''
                 Set log level.
-            '''
-        )
-        parser.add_argument(
-            '--nProcesses', action='store', default='2',
-            help='''
-                Set number of processes used for uploading in parallel.
-                (default: 2)
-            '''
-        )
-        parser.add_argument(
-            '--queueSize', action='store', default=8,
-            help='''
-                Set max number of pending uploading tasks.
-                (default: 8)
             '''
         )
 
@@ -86,7 +66,7 @@ class CommandLine:
             '''
         )
         backupParser.add_argument(
-            'path', type=str,
+            'path',
             help='''
                 Path containing files to be backed-up.
             '''
@@ -128,13 +108,13 @@ class CommandLine:
             '''
         )
         restoreParser.add_argument(
-            'path', type=str,
+            'path',
             help='''
                 Path containing files to be restored.
             '''
         )
         restoreParser.add_argument(
-            '--swapPrefix', default=['/', '/'], type=str, nargs=2,
+            '--swapPrefix', default=['/', '/'], nargs=2,
             help='''
                 Replace the prefix of file paths with the new one.
                 Usually used when restoring to a path other than the one used for backup.
@@ -186,7 +166,7 @@ class CommandLine:
             '''
         )
         removeParser.add_argument(
-            'path', type=str,
+            'path',
             help='''
                 Path containing files to be removed.
             '''
@@ -213,13 +193,13 @@ class CommandLine:
             '''
         )
         listParser.add_argument(
-            'path', type=str,
+            'path',
             help='''
                 Path containing files to be listed.
             '''
         )
         listParser.add_argument(
-            '--sortBy', action='store', default='path',
+            '--sortBy', default='path',
             choices=['perm', 'blobs', 'uid', 'gid', 'decrypt', 'encrypt', 'modification', 'path'],
             help='''
                 Sort by a specific column.
@@ -244,15 +224,22 @@ class CommandLine:
         purgeRemoteParser = subparsers.add_parser(
             'purgeRemote',
             help='''
-                List or remove unused objects in remote bucket.
+                Remove unused objects in remote bucket.
                 Usually used to sanitize remote bucket after interrupting a backup command.
             '''
         )
         purgeRemoteParser.add_argument(
-            '-r', '--remove', action='store_true', default=False,
+            '--trialRun', default=False, action='store_true',
             help='''
-                Remove unused objects.
-                (default: false)
+                Do not actually remove anything.
+                (default: False)
+            '''
+        )
+        purgeRemoteParser.add_argument(
+            '--nBlobRemoveThreads', default=4, type=int,
+            help='''
+                Set number of threads used for removing blobs from cloud bucket.
+                (default: 4)
             '''
         )
 
@@ -263,27 +250,19 @@ class CommandLine:
             '''
         )
         setupParser.add_argument(
-            '-f', '--file', action='store', default='./database.db',
-            help='''
-                SQLite3 database file name that new config will be written to.
-                (default: ./database.db)
-            '''
-        )
-        setupParser.add_argument(
-            '-c', '--credentials', action='store', default='./credentials.json',
+            '--credentialsFile', default='credentials.json',
             help='''
                 Credentials file supplied by Google.
                 This file is only need for the setup and a copy of it is saved to the database file.
-                (default: ./credentials.json)
+                (default: credentials.json)
                 (https://cloud.google.com/docs/authentication/getting-started)
             '''
         )
         setupParser.add_argument(
-            '-b', '--bucket', action='store', default='backup',
+            '--bucketName', required=True,
             help='''
                 Bucket name that stores backup files.
                 This name is only need for the setup and a copy of it is saved to the database file.
-                (default: backup)
                 (https://cloud.google.com/storage/docs/naming)
             '''
         )
@@ -291,79 +270,71 @@ class CommandLine:
         args = parser.parse_args(sys.argv[1:])
         return args
 
-    def setLogLevel(self, logLevel: str) -> None:
-        numericLevel = getattr(logging, logLevel.upper(), None)
-        if isinstance(numericLevel, int):
-            logging.basicConfig(level=numericLevel)
-
     def dispatchCommand(self, args) -> None:
         if args.command == 'noop':
             print(args)
-            return
 
-        if args.command == 'setup':
-            database = Database(args.file)
-            CloudStorage.setCredentials(database, args.credentials)
-            CloudStorage.setBucketName(database, args.bucket)
-            database.commit()
-            database.close()
-            return
+        elif args.command == 'backup':
+            backupCommand(
+                args.file,
+                args.path,
+                args.log,
+                args.nEncryptionWorkers,
+                args.nUploadThreads,
+                args.uploadQueueMiB,
+                args.nFileHashingWorkers
+            )
 
-        action = Action(args.file, int(args.nProcesses), int(args.queueSize))
-        try:
-            if args.command == 'backup':
-                backupCommand(
-                    args.file,
-                    args.path,
-                    args.log,
-                    args.nEncryptionWorkers,
-                    args.nUploadThreads,
-                    args.uploadQueueMiB,
-                    args.nFileHashingWorkers
-                )
+        elif args.command == 'restore':
+            restoreCommand(
+                args.file,
+                args.path,
+                args.log,
+                args.swapPrefix,
+                args.nDecryptionWorkers,
+                args.nDownloadThreads,
+                args.decryptQueueMiB,
+                args.fileWriteQueueMiB,
+                args.nFileVerificationWorkers
+            )
 
-            elif args.command == 'restore':
-                restoreCommand(
-                    args.file,
-                    args.path,
-                    args.log,
-                    args.swapPrefix,
-                    args.nDecryptionWorkers,
-                    args.nDownloadThreads,
-                    args.decryptQueueMiB,
-                    args.fileWriteQueueMiB,
-                    args.nFileVerificationWorkers
-                )
+        elif args.command == 'remove':
+            removeCommand(
+                args.file,
+                args.path,
+                args.log,
+                args.trialRun,
+                args.nBlobRemoveThreads
+            )
 
-            elif args.command == 'remove':
-                removeCommand(
-                    args.file,
-                    args.path,
-                    args.log,
-                    args.trialRun,
-                    args.nBlobRemoveThreads
-                )
+        elif args.command == 'list':
+            listCommand(
+                args.file,
+                args.path,
+                args.log,
+                args.sortBy,
+                args.reverseSort,
+                args.machineReadable
+            )
 
-            elif args.command == 'list':
-                listCommand(
-                    args.file,
-                    args.path,
-                    args.log,
-                    args.sortBy,
-                    args.reverseSort,
-                    args.machineReadable
-                )
+        elif args.command == 'purgeRemote':
+            purgeRemoteCommand(
+                args.file,
+                args.log,
+                args.trialRun,
+                args.nBlobRemoveThreads
+            )
 
-            elif args.command == 'purgeRemote':
-                action.purgeRemote(args.remove)
-            else:
-                print('Unknown command: {}'.format(args.command))
-            action.close()
-        except KeyboardInterrupt:
-            print('\nReceived KeyboardInterrupt, changes to database are not committed.')
-            action.close(commitDatabase=False, waitForTasks=False)
+        elif args.command == 'setup':
+            setupCommand(
+                args.file,
+                args.credentialsFile,
+                args.bucketName
+            )
+
+        else:
+            print('Unknown command: {}'.format(args.command))
 
 
 if __name__ == '__main__':
-    cl = CommandLine()
-    cl.close()
+    CommandLine()
